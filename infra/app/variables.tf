@@ -168,13 +168,13 @@ variable "auth_callback_urls" {
 
 variable "auth_logout_urls" {
   type        = list(string)
-  description = "Exact web app URLs Cognito may send a user to after sign-out."
+  description = "Exact web app URLs Cognito may send a user to after sign-out. The web app always asks for its sign-in page (redirectSignOut in ambrace-webapp/lib/auth/config.ts), and Cognito refuses any address that is not listed here in full."
 
   validation {
     condition = length(var.auth_logout_urls) > 0 && alltrue([
       for url in var.auth_logout_urls :
-      can(regex("^https://[a-z0-9.-]+(/[A-Za-z0-9._~/-]*)?$", url)) || can(regex("^http://localhost:[0-9]+(/[A-Za-z0-9._~/-]*)?$", url))
+      can(regex("^https://[a-z0-9.-]+/sign-in$", url)) || can(regex("^http://localhost:[0-9]+/sign-in$", url))
     ])
-    error_message = "Each sign-out URL must be an https:// URL, or http://localhost:<port> for local development. No wildcards or query strings."
+    error_message = "Each sign-out URL must be the web app's sign-in page: https://<host>/sign-in, or http://localhost:<port>/sign-in for local development. The bare site address is refused by Cognito at sign-out."
   }
 }

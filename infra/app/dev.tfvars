@@ -15,7 +15,9 @@ auth_callback_urls = [
   "https://app-dev.ambrace.in/auth/callback",
   "http://localhost:3000/auth/callback",
 ]
+# Where the web app asks to return after sign-out: its sign-in page. Cognito
+# compares the whole address, so the bare site address is refused.
 auth_logout_urls = [
-  "https://app-dev.ambrace.in",
-  "http://localhost:3000",
+  "https://app-dev.ambrace.in/sign-in",
+  "http://localhost:3000/sign-in",
 ]
