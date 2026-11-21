@@ -13,6 +13,8 @@ cognito_domain_prefix = "ambrace"
 auth_callback_urls = [
   "https://app.ambrace.in/auth/callback",
 ]
+# Where the web app asks to return after sign-out: its sign-in page. Cognito
+# compares the whole address, so the bare site address is refused.
 auth_logout_urls = [
-  "https://app.ambrace.in",
+  "https://app.ambrace.in/sign-in",
 ]

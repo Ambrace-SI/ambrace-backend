@@ -44,7 +44,7 @@ variables {
 
   cognito_domain_prefix = "ambrace-dev"
   auth_callback_urls    = ["https://app-dev.ambrace.in/auth/callback", "http://localhost:3000/auth/callback"]
-  auth_logout_urls      = ["https://app-dev.ambrace.in", "http://localhost:3000"]
+  auth_logout_urls      = ["https://app-dev.ambrace.in/sign-in", "http://localhost:3000/sign-in"]
 }
 
 run "dev_sessions" {
@@ -293,4 +293,26 @@ run "rejects_wildcard_callback" {
   }
 
   expect_failures = [var.auth_callback_urls]
+}
+
+# The web app asks Cognito to return to /sign-in after sign-out. Cognito
+# compares the whole address, so the bare site address breaks sign-out for
+# every Google account ("Required parameters missing").
+run "rejects_a_sign_out_address_the_web_app_never_asks_for" {
+  command = plan
+
+  variables {
+    auth_logout_urls = ["https://app-dev.ambrace.in"]
+  }
+
+  expect_failures = [var.auth_logout_urls]
+}
+
+run "sign_out_returns_to_the_sign_in_page" {
+  command = plan
+
+  assert {
+    condition     = aws_cognito_user_pool_client.web.logout_urls == toset(["https://app-dev.ambrace.in/sign-in", "http://localhost:3000/sign-in"])
+    error_message = "The web client must allow sign-out to return to the sign-in page."
+  }
 }
