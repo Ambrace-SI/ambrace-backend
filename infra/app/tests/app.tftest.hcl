@@ -40,6 +40,7 @@ variables {
   aws_account_id       = "798299234172"
   cors_allowed_origins = ["https://app-dev.ambrace.in", "http://localhost:3000"]
   custom_domain_name   = "api-dev.ambrace.in"
+  web_app_url          = "https://app-dev.ambrace.in"
 
   cognito_domain_prefix = "ambrace-dev"
   auth_callback_urls    = ["https://app-dev.ambrace.in/auth/callback", "http://localhost:3000/auth/callback"]
@@ -78,6 +79,7 @@ run "prod_sessions" {
     environment          = "prod"
     aws_account_id       = "074259854866"
     cors_allowed_origins = ["https://app.ambrace.in"]
+    web_app_url          = "https://app.ambrace.in"
     custom_domain_name   = "api.ambrace.in"
   }
 
@@ -136,6 +138,47 @@ run "browser_origins_are_exact" {
     condition     = aws_lambda_function.backend.environment[0].variables.CORS_ORIGINS == "https://app-dev.ambrace.in,http://localhost:3000"
     error_message = "The app must receive exactly the configured origins."
   }
+}
+
+run "the_web_build_reads_its_settings_from_ssm" {
+  command = plan
+
+  assert {
+    condition     = output.web_settings_path == "/ambrace/dev/web"
+    error_message = "Web settings path is a contract with the web deploy role's read permission."
+  }
+
+  assert {
+    condition = toset(keys(aws_ssm_parameter.web_setting)) == toset([
+      "app_url", "api_base_url", "cognito_user_pool_id", "cognito_client_id", "cognito_domain",
+    ])
+    error_message = "The web build needs exactly these settings."
+  }
+
+  assert {
+    condition     = aws_ssm_parameter.web_setting["app_url"].value == "https://app-dev.ambrace.in"
+    error_message = "The web app must be told its own address."
+  }
+
+  assert {
+    condition     = aws_ssm_parameter.web_setting["api_base_url"].value == "https://api-dev.ambrace.in"
+    error_message = "With a custom domain, the web app calls the API on it."
+  }
+
+  assert {
+    condition     = alltrue([for parameter in aws_ssm_parameter.web_setting : parameter.type == "String" && parameter.tier == "Standard"])
+    error_message = "Web settings are public values: plain String, free Standard tier."
+  }
+}
+
+run "rejects_a_web_app_the_api_would_refuse" {
+  command = plan
+
+  variables {
+    web_app_url = "https://somewhere-else.ambrace.in"
+  }
+
+  expect_failures = [var.web_app_url]
 }
 
 run "rejects_wildcard_origin" {

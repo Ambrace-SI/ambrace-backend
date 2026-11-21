@@ -75,3 +75,28 @@ variable "api_domain_name" {
   description = "Public hostname of the backend API in this environment (e.g. api-dev.ambrace.in). Empty skips the certificate."
   default     = ""
 }
+
+# ------------------------------------------------------------------------------
+# Web app (Ambrace-SI/ambrace-webapp)
+# ------------------------------------------------------------------------------
+
+variable "web_github_subject_prefix" {
+  type        = string
+  description = <<-EOT
+    Prefix of the OIDC `sub` claim GitHub issues for the web repository. Read the
+    live value with:
+      gh api repos/Ambrace-SI/ambrace-webapp/actions/oidc/customization/sub --jq .sub_claim_prefix
+  EOT
+  default     = "repo:Ambrace-SI@357749772/ambrace-webapp@1462385816"
+
+  validation {
+    condition     = can(regex("^repo:[^:*?]+/[^:*?]+$", var.web_github_subject_prefix))
+    error_message = "web_github_subject_prefix must look like repo:OWNER/REPO or repo:OWNER@ID/REPO@ID, with no wildcards."
+  }
+}
+
+variable "app_domain_name" {
+  type        = string
+  description = "Public hostname of the web app in this environment (e.g. app-dev.ambrace.in). Empty skips the certificate."
+  default     = ""
+}

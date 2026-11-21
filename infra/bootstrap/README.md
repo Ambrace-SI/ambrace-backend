@@ -22,6 +22,8 @@ Region: `ap-south-1` (Mumbai).
 | IAM role | `ambrace-github-deploy-<env>` | Assumed by the pipeline. No access keys exist. |
 | IAM policy | `ambrace-<env>-runtime-boundary` | Upper limit on what application (Lambda) roles can ever do. |
 | ACM certificate | `api-dev.ambrace.in` / `api.ambrace.in` | TLS for the API custom domain. Issued after a DNS record is added by hand. |
+| IAM role | `ambrace-github-web-deploy-<env>` | Assumed by the web app's pipeline (`ambrace-webapp`). Separate from the backend's role. |
+| ACM certificate (us-east-1) | `app-dev.ambrace.in` / `app.ambrace.in` | TLS for the web app on CloudFront. Issued after a DNS record is added by hand. |
 
 Nothing here has a standing monthly charge beyond a few KB of S3 storage.
 
@@ -213,6 +215,45 @@ Then, in GitHub → Settings → Environments:
 
 The environment names are case-sensitive and must match `github_environment_name`
 in the var file and `environment:` in the workflow.
+
+## The web app's pipeline
+
+The web app is a static site: files in a private S3 bucket, served by
+CloudFront. Its repository (`Ambrace-SI/ambrace-webapp`) gets its own role,
+defined in `web_deploy.tf`, through the same GitHub OIDC provider.
+
+The role can: keep Terraform state under `web/`; manage the one bucket named
+`ambrace-<env>-web-<account_id>`; manage CloudFront distributions, access
+controls, functions named `ambrace-<env>-*` and response headers policies; look
+up certificates; read the build settings under `/ambrace/<env>/web/` (written by
+`infra/app`); and write `/ambrace/<env>/web/hosting/*`.
+
+It cannot touch the backend's state, Lambda, DynamoDB, Cognito, IAM or any other
+SSM parameter, and the backend's role cannot touch the site.
+
+The app certificate is in `us-east-1` because CloudFront reads viewer
+certificates only from there. It is the one Ambrace resource outside Mumbai and
+it is free. Add its record at the DNS provider the same way as the API's; the
+record is printed by `app_certificate_validation_records`.
+
+Connect the web repository once per environment:
+
+```powershell
+gh api --method PUT repos/Ambrace-SI/ambrace-webapp/environments/development
+```
+
+```powershell
+gh variable set AWS_DEPLOY_ROLE_ARN --repo Ambrace-SI/ambrace-webapp --env development --body "arn:aws:iam::798299234172:role/ambrace-github-web-deploy-dev"
+```
+
+```powershell
+gh variable set AWS_REGION --repo Ambrace-SI/ambrace-webapp --env development --body "ap-south-1"
+```
+
+For prod use environment `production` and
+`arn:aws:iam::074259854866:role/ambrace-github-web-deploy-prod`. Apply the same
+branch rules as above: `production` only from `release` with a required
+reviewer, `development` only from `master` and `Ambrace-*`.
 
 ## Using temporary keys instead of a CLI profile
 

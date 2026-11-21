@@ -6,6 +6,7 @@ custom_domain_name    = "api.ambrace.in"
 cors_allowed_origins = [
   "https://app.ambrace.in",
 ]
+web_app_url = "https://app.ambrace.in"
 
 # Sign-in. The prefix is registered in the Google OAuth client "Ambrace Prod".
 cognito_domain_prefix = "ambrace"

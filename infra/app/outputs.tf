@@ -102,3 +102,8 @@ output "google_authorized_redirect_uri" {
   description = "Must be listed under Authorised redirect URIs in the Google OAuth client."
   value       = "https://${local.cognito_domain_host}/oauth2/idpresponse"
 }
+
+output "web_settings_path" {
+  description = "SSM path the web app's build reads its settings from."
+  value       = local.web_settings_prefix
+}

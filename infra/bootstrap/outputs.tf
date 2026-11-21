@@ -56,3 +56,51 @@ output "api_certificate_validation_records" {
     ]
   ])
 }
+
+# ------------------------------------------------------------------------------
+# Web app
+# ------------------------------------------------------------------------------
+
+output "web_deploy_subject" {
+  description = "The only OIDC subject allowed to assume the web deploy role."
+  value       = local.web_deploy_subject
+}
+
+output "web_deploy_role_arn" {
+  description = "Set this as the AWS_DEPLOY_ROLE_ARN variable on the matching GitHub Environment of ambrace-webapp."
+  value       = aws_iam_role.web_deploy.arn
+}
+
+output "web_bucket_name" {
+  description = "The only bucket name the web stack is allowed to create for the site."
+  value       = local.web_bucket_name
+}
+
+output "web_state_key" {
+  description = "Object key ambrace-webapp/infra must use for its state in this account."
+  value       = local.web_state_key
+}
+
+output "web_parameter_path" {
+  description = "SSM path the web build reads its settings from."
+  value       = "/${local.web_parameter_path}"
+}
+
+output "app_certificate_arn" {
+  description = "ACM certificate (us-east-1) for the app domain (null when app_domain_name is empty)."
+  value       = one(aws_acm_certificate.app[*].arn)
+}
+
+output "app_certificate_validation_records" {
+  description = "CNAME record(s) to create at the DNS provider so ACM can issue the app certificate."
+  value = flatten([
+    for cert in aws_acm_certificate.app : [
+      for option in cert.domain_validation_options : {
+        domain = option.domain_name
+        type   = option.resource_record_type
+        name   = option.resource_record_name
+        value  = option.resource_record_value
+      }
+    ]
+  ])
+}
