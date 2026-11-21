@@ -204,6 +204,14 @@ class VivaService:
                             "status",
                         }
                     ),
+                    # Enough to tell vivas apart in a list without opening each
+                    # report; the report itself is still fetched one at a time.
+                    "score": session.feedback.score if session.feedback else None,
+                    "subject_name": (
+                        session.curriculum_selection.subject_name
+                        if session.curriculum_selection
+                        else None
+                    ),
                 }
             )
         return {"sessions": history, "next_cursor": next_cursor}

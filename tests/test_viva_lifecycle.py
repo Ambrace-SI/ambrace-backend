@@ -96,3 +96,39 @@ def test_conclusion_does_not_complete_after_abandon_wins():
                 "owner",
             )
         )
+
+
+def test_history_entry_carries_score_and_subject_when_known():
+    """A list can tell vivas apart without opening each report."""
+    finished = session(
+        status="completed",
+        feedback={
+            "score": 7,
+            "summary": "Clear.",
+            "strong_points": [],
+            "areas_of_improvement": [],
+        },
+        curriculum_selection={
+            "class_level": 7,
+            "subject_id": "science",
+            "subject_name": "Science",
+            "chapters": [{"id": "plants", "name": "Plants"}],
+        },
+    )
+    left_early = session(status="abandoned")
+    service = VivaService(
+        SimpleNamespace(),
+        SimpleNamespace(
+            list_sessions_for_user=AsyncMock(
+                return_value=([finished, left_early], "next")
+            )
+        ),
+    )
+
+    page = asyncio.run(service.get_user_history("owner", 20, None))
+
+    first, second = page["sessions"]
+    assert (first["score"], first["subject_name"]) == (7, "Science")
+    assert (second["score"], second["subject_name"]) == (None, None)
+    assert "feedback" not in first and "transcript" not in first
+    assert page["next_cursor"] == "next"

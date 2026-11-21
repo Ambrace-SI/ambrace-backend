@@ -224,7 +224,11 @@ class ConcludeVivaResponse(BaseModel):
 
 
 class VivaSessionSummary(BaseModel):
-    """Compact history entry that omits report contents and connection credentials."""
+    """Compact history entry that omits report contents and connection credentials.
+
+    score and subject_name let a list tell vivas apart at a glance. Both are
+    absent for sessions that have no report or predate the curriculum catalogue.
+    """
 
     viva_session_id: str
     title: str
@@ -233,6 +237,8 @@ class VivaSessionSummary(BaseModel):
     started_at: datetime.datetime
     session_type: str
     status: str
+    score: int | None = None
+    subject_name: str | None = None
 
 
 class VivaSessionDetailResponse(BaseModel):
