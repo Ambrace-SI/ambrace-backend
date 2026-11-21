@@ -25,11 +25,17 @@ mock_provider "aws" {
   }
 }
 
+# The app certificate lives in us-east-1 (a CloudFront requirement).
+mock_provider "aws" {
+  alias = "us_east_1"
+}
+
 variables {
   environment             = "dev"
   aws_account_id          = "798299234172"
   github_environment_name = "development"
   api_domain_name         = "api-dev.ambrace.in"
+  app_domain_name         = "app-dev.ambrace.in"
 }
 
 run "names_follow_the_environment_prefix" {
@@ -73,6 +79,73 @@ run "only_the_github_environment_can_assume_the_role" {
     condition     = !strcontains(output.github_deploy_subject, "*")
     error_message = "Deploy subject must never contain a wildcard."
   }
+}
+
+run "the_web_app_has_its_own_role_and_reach" {
+  command = plan
+
+  assert {
+    condition     = aws_iam_role.web_deploy.name == "ambrace-github-web-deploy-dev"
+    error_message = "Web deploy role must be named ambrace-github-web-deploy-<env>."
+  }
+
+  assert {
+    condition     = !startswith(aws_iam_role.web_deploy.name, "ambrace-dev-")
+    error_message = "Web deploy role must sit outside the ambrace-<env>-* range."
+  }
+
+  assert {
+    condition     = output.web_deploy_subject == "repo:Ambrace-SI@357749772/ambrace-webapp@1462385816:environment:development"
+    error_message = "Web deploy subject must be the web repository's immutable prefix plus the GitHub Environment."
+  }
+
+  assert {
+    condition     = output.web_deploy_subject != output.github_deploy_subject
+    error_message = "The web and backend pipelines must not share a subject."
+  }
+
+  assert {
+    condition     = output.web_bucket_name == "ambrace-dev-web-798299234172"
+    error_message = "Site bucket name is a contract with ambrace-webapp/infra."
+  }
+
+  assert {
+    condition     = output.web_state_key == "web/terraform.tfstate"
+    error_message = "Web state key is a contract with the web deploy role's S3 policy."
+  }
+
+  assert {
+    condition     = output.web_parameter_path == "/ambrace/dev/web"
+    error_message = "Web settings live under /ambrace/<env>/web."
+  }
+
+  assert {
+    condition     = aws_acm_certificate.app[0].domain_name == "app-dev.ambrace.in"
+    error_message = "The app certificate must cover the app domain."
+  }
+}
+
+run "app_certificate_is_optional" {
+  command = plan
+
+  variables {
+    app_domain_name = ""
+  }
+
+  assert {
+    condition     = length(aws_acm_certificate.app) == 0
+    error_message = "No certificate should be requested when app_domain_name is empty."
+  }
+}
+
+run "rejects_wildcard_web_subject_prefix" {
+  command = plan
+
+  variables {
+    web_github_subject_prefix = "repo:Ambrace-SI/*"
+  }
+
+  expect_failures = [var.web_github_subject_prefix]
 }
 
 run "certificate_is_optional" {

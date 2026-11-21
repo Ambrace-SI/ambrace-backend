@@ -124,6 +124,21 @@ variable "api_throttling_burst_limit" {
   default     = 40
 }
 
+variable "web_app_url" {
+  type        = string
+  description = "Address the deployed web app is served from. Handed to the web build, and must be one of cors_allowed_origins."
+
+  validation {
+    condition     = can(regex("^https://[a-z0-9.-]+$", var.web_app_url))
+    error_message = "web_app_url must be https://host with no path."
+  }
+
+  validation {
+    condition     = contains(var.cors_allowed_origins, var.web_app_url)
+    error_message = "web_app_url must be listed in cors_allowed_origins, or the deployed web app could not call the API."
+  }
+}
+
 # ------------------------------------------------------------------------------
 # Authentication
 # ------------------------------------------------------------------------------
