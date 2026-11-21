@@ -250,11 +250,7 @@ gh variable set AWS_DEPLOY_ROLE_ARN --repo Ambrace-SI/ambrace-webapp --env devel
 gh variable set AWS_REGION --repo Ambrace-SI/ambrace-webapp --env development --body "ap-south-1"
 ```
 
-```powershell
-gh variable set AWS_ACCOUNT_ID --repo Ambrace-SI/ambrace-webapp --env development --body "798299234172"
-```
-
-For prod use environment `production`, account `074259854866` and
+For prod use environment `production` and
 `arn:aws:iam::074259854866:role/ambrace-github-web-deploy-prod`. Apply the same
 branch rules as above: `production` only from `release` with a required
 reviewer, `development` only from `master` and `Ambrace-*`.
