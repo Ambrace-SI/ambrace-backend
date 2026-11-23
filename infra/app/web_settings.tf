@@ -46,3 +46,44 @@ resource "aws_ssm_parameter" "web_setting" {
   tier        = "Standard"
   value       = each.value.value
 }
+
+# ------------------------------------------------------------------------------
+# Product analytics (PostHog)
+# ------------------------------------------------------------------------------
+#
+# Terraform creates these so every environment has them, but it does not own
+# their values: the project key is pasted in by a person, once, and must
+# survive every later apply. Until then the key is a placeholder. The web app
+# only accepts a value that starts with "phc_" as a key, so any placeholder
+# leaves analytics off.
+#
+# A PostHog project key is public: it ships in the JavaScript.
+
+locals {
+  web_setting_not_set = "unset"
+
+  web_analytics_settings = {
+    posthog_key = {
+      value       = local.web_setting_not_set
+      description = "PostHog project key (phc_...). Anything else leaves analytics off."
+    }
+    posthog_host = {
+      value       = "https://us.i.posthog.com"
+      description = "Address PostHog events are sent to. Must also be in the web app's connect_sources."
+    }
+  }
+}
+
+resource "aws_ssm_parameter" "web_analytics_setting" {
+  for_each = local.web_analytics_settings
+
+  name        = "${local.web_settings_prefix}/${each.key}"
+  description = "Ambrace ${var.environment} web build: ${each.value.description}"
+  type        = "String"
+  tier        = "Standard"
+  value       = each.value.value
+
+  lifecycle {
+    ignore_changes = [value]
+  }
+}

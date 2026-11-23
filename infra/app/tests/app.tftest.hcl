@@ -171,6 +171,35 @@ run "the_web_build_reads_its_settings_from_ssm" {
   }
 }
 
+run "analytics_settings_exist_but_are_filled_in_by_hand" {
+  command = plan
+
+  assert {
+    condition     = aws_ssm_parameter.web_analytics_setting["posthog_key"].name == "/ambrace/dev/web/posthog_key"
+    error_message = "The web pipeline reads the key from this exact name."
+  }
+
+  assert {
+    condition     = aws_ssm_parameter.web_analytics_setting["posthog_host"].name == "/ambrace/dev/web/posthog_host"
+    error_message = "The web pipeline reads the host from this exact name."
+  }
+
+  assert {
+    condition     = !startswith(aws_ssm_parameter.web_analytics_setting["posthog_key"].value, "phc_")
+    error_message = "A new environment starts with analytics off: the web app only accepts a value starting with phc_ as a key."
+  }
+
+  assert {
+    condition     = startswith(aws_ssm_parameter.web_analytics_setting["posthog_host"].value, "https://")
+    error_message = "Events are only ever sent over HTTPS."
+  }
+
+  assert {
+    condition     = alltrue([for parameter in aws_ssm_parameter.web_analytics_setting : parameter.type == "String" && parameter.tier == "Standard"])
+    error_message = "A PostHog project key is public: plain String, free Standard tier."
+  }
+}
+
 run "rejects_a_web_app_the_api_would_refuse" {
   command = plan
 
