@@ -128,8 +128,37 @@ Storage stays in the sessions table with no index:
 - `JOINCODE#<code>/JOINCODE` finds a group from its code.
 
 Both sides of a relationship are written in one transaction. Transactions are
-authorised through the item actions the Lambda already has. The only new
-permission is `dynamodb:BatchGetItem`.
+authorised through the item actions the Lambda already has, plus
+`dynamodb:BatchGetItem` and `dynamodb:ConditionCheckItem`.
+
+## Set vivas (assignments)
+
+A group's owner sets a viva for one chapter (with optional topics) and an
+optional due day. Students in the group see it and start it. The viva is built
+on the server from the assignment, so a student cannot change its scope.
+
+| Route | Who | Purpose |
+|---|---|---|
+| `POST /api/v1/groups/{id}/assignments` | owner | Set a viva: `curriculum_selection` (one chapter) and optional `due_on`. The class must match the group's class, if it has one. |
+| `GET /api/v1/groups/{id}/assignments` | owner | The group's vivas, newest first, with `completed_count`. |
+| `DELETE /api/v1/groups/{id}/assignments/{aid}` | owner | Remove a viva and every result recorded for it. |
+| `GET /api/v1/groups/assigned` | student | Vivas set in all my groups: not done first, soonest due first, with my score once done. |
+| `POST /api/v1/groups/{id}/assignments/{aid}/start` | student in the group | Start it. Returns the same answer as `/viva/start`, so the browser's voice engine is unchanged. 5 per minute. |
+
+When a viva started from an assignment concludes, the **first** finished
+attempt is recorded for the owner: the report only, never the transcript.
+Later attempts are the student's own practice. Nothing is recorded once the
+viva has been removed or the student has left the group. The browser sends a
+conclusion once, so a failure to record is logged
+(`event=assignment_result_record_failed`) and never fails the student's own
+report.
+
+Storage stays in the sessions table:
+
+- `GROUP#<id>/ASSIGN#<aid>` holds the set viva.
+- `GROUP#<id>/RESULT#<aid>#<student>` holds the student's report, for the owner.
+- `USER#<student>/DONE#<id>#<aid>` records the completion on the student's side.
+- The session itself gains an optional `assignment` reference.
 
 ## Local development
 

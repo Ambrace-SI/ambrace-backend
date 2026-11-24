@@ -536,6 +536,20 @@ class GroupRepository:
         deletes: list[dict[str, Any]] = []
         for item in await self._query_all(f"GROUP#{group.group_id}"):
             deletes.append({"Delete": {"Key": {"pk": item["pk"], "sk": item["sk"]}}})
+            if item["sk"]["S"].startswith("RESULT#"):
+                # The student's own note of finishing it goes too.
+                assignment_id = item["sk"]["S"].split("#")[1]
+                student_id = item["student_id"]["S"]
+                deletes.append(
+                    {
+                        "Delete": {
+                            "Key": {
+                                "pk": {"S": f"USER#{student_id}"},
+                                "sk": {"S": f"DONE#{group.group_id}#{assignment_id}"},
+                            }
+                        }
+                    }
+                )
             if item["sk"]["S"].startswith("MEMBER#"):
                 student_id = item["sk"]["S"].removeprefix("MEMBER#")
                 deletes.append(

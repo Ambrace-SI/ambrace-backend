@@ -60,6 +60,9 @@ data "aws_iam_policy_document" "lambda_sessions" {
       "dynamodb:UpdateItem",
       "dynamodb:Query",
       "dynamodb:DeleteItem",
+      # A set viva's result is recorded only while the viva and the student's
+      # membership still exist: two condition checks in one transaction.
+      "dynamodb:ConditionCheckItem",
     ]
     resources = [aws_dynamodb_table.sessions.arn]
   }

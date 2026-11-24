@@ -1,8 +1,16 @@
 """Session lifecycle and assessment rules, independent of DynamoDB expressions."""
 
 import datetime
+import logging
+from typing import Protocol
 
-from app.db.models import VivaFeedback, VivaSession, new_session_id, utc_now
+from app.db.models import (
+    AssignmentRef,
+    VivaFeedback,
+    VivaSession,
+    new_session_id,
+    utc_now,
+)
 from app.db.session_repository import SessionConflict, SessionRepository
 from app.domain.curriculum import CurriculumSelection
 from app.interfaces.llm_client import LLMClient
@@ -10,17 +18,34 @@ from app.schemas.viva import VivaStartRequest
 
 SESSION_EXPIRY_GRACE = datetime.timedelta(minutes=2)
 
+logger = logging.getLogger(__name__)
+
+
+class ResultRecorder(Protocol):
+    """Passes a finished viva on to the assignment it was started from."""
+
+    async def record(self, session: VivaSession) -> None: ...
+
 
 class VivaService:
     """Apply session business rules without exposing storage expressions to routes."""
 
-    def __init__(self, llm_client: LLMClient, repository: SessionRepository) -> None:
+    def __init__(
+        self,
+        llm_client: LLMClient,
+        repository: SessionRepository,
+        results: ResultRecorder | None = None,
+    ) -> None:
         """Inject provider provisioning and storage without coupling routes to either implementation."""
         self.llm_client = llm_client
         self.repository = repository
+        self.results = results
 
     async def start_new_viva_session(
-        self, viva_request: VivaStartRequest, user_id: str
+        self,
+        viva_request: VivaStartRequest,
+        user_id: str,
+        assignment: AssignmentRef | None = None,
     ) -> dict:
         """Provision a usable credential before persisting the viva and its original deadline."""
         # A failed token request must not leave a session that was never usable.
@@ -43,6 +68,7 @@ class VivaService:
             ),
             started_at=now,
             updated_at=now,
+            assignment=assignment,
             expires_at=now
             + datetime.timedelta(minutes=token_data["session_duration_minutes"])
             + SESSION_EXPIRY_GRACE,
@@ -125,7 +151,10 @@ class VivaService:
         """
         session = await self._get_session_with_ownership_check(viva_session_id, user_id)
         if session.status != "in_progress":
-            return self._completion_response(session)
+            response = self._completion_response(session)
+            # A repeat delivery retries a result that failed to record before.
+            await self._pass_on_result(session)
+            return response
         session.feedback = VivaFeedback(
             score=score,
             summary=summary,
@@ -145,7 +174,26 @@ class VivaService:
             session = await self.repository.get_session_for_user(
                 user_id, viva_session_id
             )
-        return self._completion_response(session)
+        response = self._completion_response(session)
+        await self._pass_on_result(session)
+        return response
+
+    async def _pass_on_result(self, session: VivaSession) -> None:
+        """Give a set viva's report to whoever set it, without risking the student's.
+
+        The browser sends a conclusion once and does not retry it, so a
+        failure here is logged and swallowed: the student's own report is
+        already saved and must still be shown.
+        """
+        if self.results is None or session.assignment is None:
+            return
+        try:
+            await self.results.record(session)
+        except Exception as error:
+            logger.error(
+                "event=assignment_result_record_failed error_type=%s",
+                type(error).__name__,
+            )
 
     async def abandon_viva_session(self, session_id: str, user_id: str) -> dict:
         """End an active viva without overwriting a concurrent completion or prior abandonment."""
