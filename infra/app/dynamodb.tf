@@ -54,6 +54,8 @@ data "aws_iam_policy_document" "lambda_sessions" {
     sid = "SessionsForThisEnvironment"
     actions = [
       "dynamodb:GetItem",
+      # Reads the groups listed for an educator or a student in one request.
+      "dynamodb:BatchGetItem",
       "dynamodb:PutItem",
       "dynamodb:UpdateItem",
       "dynamodb:Query",

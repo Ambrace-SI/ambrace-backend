@@ -166,3 +166,30 @@ def test_storage_failures_are_reported_without_provider_details(error):
         assert caught.value.__cause__ is None
         assert "private-endpoint" not in str(caught.value)
         assert "Throughput" not in str(caught.value)
+
+
+def test_profiles_saved_before_account_types_read_as_students(repository, client):
+    client.put_item(
+        TableName=TABLE,
+        Item={
+            "pk": {"S": "USER#legacy"},
+            "sk": {"S": "PROFILE"},
+            "data": {"S": '{"name": "Asha Rao", "class_level": 9}'},
+            "created_at": {"S": "2026-11-21T10:30:00+00:00"},
+            "updated_at": {"S": "2026-11-21T10:30:00+00:00"},
+        },
+    )
+
+    loaded = asyncio.run(repository.get("legacy"))
+
+    assert loaded.account_type == "student"
+    assert loaded.class_level == 9
+
+
+def test_a_parent_profile_round_trips_without_a_class(repository):
+    parent = UserProfile(name="Meera", account_type="parent")
+
+    asyncio.run(repository.save("owner", parent))
+    loaded = asyncio.run(repository.get("owner"))
+
+    assert (loaded.account_type, loaded.class_level) == ("parent", None)

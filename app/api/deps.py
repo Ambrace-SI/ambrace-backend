@@ -32,9 +32,11 @@ from app.core.auth import (
     CurrentUser,
 )
 from app.db.database import get_repository, init_db
+from app.db.group_repository import GroupRepository
 from app.db.profile_repository import ProfileRepository
 from app.interfaces.llm_client import LLMClient
 from app.services.gemini_service import GeminiService
+from app.services.group_service import GroupService
 from app.services.profile_service import ProfileService
 from app.services.viva_service import VivaService
 
@@ -90,4 +92,20 @@ async def get_profile_service(current_user: CurrentUser) -> ProfileService:
     """
     await init_db()
     sessions = get_repository()
-    return ProfileService(ProfileRepository(sessions.client, sessions.table_name))
+    return ProfileService(
+        ProfileRepository(sessions.client, sessions.table_name),
+        GroupRepository(sessions.client, sessions.table_name),
+    )
+
+
+# ----------------------------------------------------------------------
+# Group Service Provider
+# ----------------------------------------------------------------------
+async def get_group_service(current_user: CurrentUser) -> GroupService:
+    """Groups share the sessions table and its cached client, like profiles."""
+    await init_db()
+    sessions = get_repository()
+    return GroupService(
+        GroupRepository(sessions.client, sessions.table_name),
+        ProfileRepository(sessions.client, sessions.table_name),
+    )

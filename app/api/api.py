@@ -15,7 +15,7 @@ By structuring routers this way, the application:
 
 from fastapi import APIRouter
 
-from app.api.v1 import me, viva
+from app.api.v1 import groups, me, viva
 
 # ----------------------------------------------------------------------
 # Main API Router
@@ -47,4 +47,11 @@ api_router.include_router(
     me.router,
     prefix="/v1/me",
     tags=["me"],
+)
+
+# Groups: educators own them, students join them with a code.
+api_router.include_router(
+    groups.router,
+    prefix="/v1/groups",
+    tags=["groups"],
 )
