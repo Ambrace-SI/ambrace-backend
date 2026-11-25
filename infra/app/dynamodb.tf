@@ -54,10 +54,15 @@ data "aws_iam_policy_document" "lambda_sessions" {
     sid = "SessionsForThisEnvironment"
     actions = [
       "dynamodb:GetItem",
+      # Reads the groups listed for an educator or a student in one request.
+      "dynamodb:BatchGetItem",
       "dynamodb:PutItem",
       "dynamodb:UpdateItem",
       "dynamodb:Query",
       "dynamodb:DeleteItem",
+      # A set viva's result is recorded only while the viva and the student's
+      # membership still exist: two condition checks in one transaction.
+      "dynamodb:ConditionCheckItem",
     ]
     resources = [aws_dynamodb_table.sessions.arn]
   }

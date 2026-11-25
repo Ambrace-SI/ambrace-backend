@@ -6,7 +6,7 @@ items, so the profile never appears there.
 
 import asyncio
 import datetime
-from typing import Any, Literal
+from typing import Any, Literal, TypeIs
 
 from botocore.exceptions import BotoCoreError, ClientError
 from pydantic import BaseModel
@@ -15,16 +15,29 @@ from app.db.models import utc_now
 from app.db.session_repository import RepositoryUnavailable
 
 Board = Literal["CBSE", "ICSE", "STATE_BOARD", "OTHER"]
+# Who the person is, as onboarding asks it. Teachers and parents have the same
+# powers (see is_educator); the difference only changes wording. A future
+# school admin is a role inside an organisation, not another account type.
+AccountType = Literal["student", "teacher", "parent"]
+EducatorType = Literal["teacher", "parent"]
+
+
+def is_educator(account_type: AccountType) -> TypeIs[EducatorType]:
+    """The one place that decides who may own groups. Never check "teacher" alone."""
+    return account_type != "student"
+
 
 MIN_CLASS_LEVEL = 5
 MAX_CLASS_LEVEL = 12
 
 
 class UserProfile(BaseModel):
-    """What a student tells us once, after signing in."""
+    """What a person tells us once, after signing in."""
 
     name: str
-    class_level: int
+    # Profiles saved before account types existed are students.
+    account_type: AccountType = "student"
+    class_level: int | None = None
     # Optional: onboarding only insists on a name and a class.
     board: Board | None = None
     school_name: str | None = None

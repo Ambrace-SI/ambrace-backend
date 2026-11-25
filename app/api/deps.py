@@ -31,10 +31,17 @@ from fastapi import Depends
 from app.core.auth import (
     CurrentUser,
 )
+from app.db.assignment_repository import AssignmentRepository
 from app.db.database import get_repository, init_db
+from app.db.group_repository import GroupRepository
 from app.db.profile_repository import ProfileRepository
 from app.interfaces.llm_client import LLMClient
+from app.services.assignment_service import (
+    AssignmentResultRecorder,
+    AssignmentService,
+)
 from app.services.gemini_service import GeminiService
+from app.services.group_service import GroupService
 from app.services.profile_service import ProfileService
 from app.services.viva_service import VivaService
 
@@ -74,7 +81,12 @@ async def get_viva_service(
     SDK initialization runs off the event loop; requests reuse the cached client.
     """
     await init_db()
-    return VivaService(llm_client=llm_service, repository=get_repository())
+    sessions = get_repository()
+    # A viva started from an assignment hands its report to whoever set it.
+    results = AssignmentResultRecorder(
+        AssignmentRepository(sessions.client, sessions.table_name)
+    )
+    return VivaService(llm_client=llm_service, repository=sessions, results=results)
 
 
 # ----------------------------------------------------------------------
@@ -90,4 +102,38 @@ async def get_profile_service(current_user: CurrentUser) -> ProfileService:
     """
     await init_db()
     sessions = get_repository()
-    return ProfileService(ProfileRepository(sessions.client, sessions.table_name))
+    return ProfileService(
+        ProfileRepository(sessions.client, sessions.table_name),
+        GroupRepository(sessions.client, sessions.table_name),
+    )
+
+
+# ----------------------------------------------------------------------
+# Group Service Provider
+# ----------------------------------------------------------------------
+async def get_group_service(current_user: CurrentUser) -> GroupService:
+    """Groups share the sessions table and its cached client, like profiles."""
+    await init_db()
+    sessions = get_repository()
+    return GroupService(
+        GroupRepository(sessions.client, sessions.table_name),
+        ProfileRepository(sessions.client, sessions.table_name),
+    )
+
+
+# ----------------------------------------------------------------------
+# Assignment Service Provider
+# ----------------------------------------------------------------------
+async def get_assignment_service(
+    current_user: CurrentUser,
+    llm_service: Annotated[LLMClient, Depends(get_llm_service)],
+) -> AssignmentService:
+    """Set vivas need groups, profiles and the viva lifecycle to start one."""
+    viva = await get_viva_service(current_user, llm_service)
+    sessions = viva.repository
+    return AssignmentService(
+        GroupRepository(sessions.client, sessions.table_name),
+        AssignmentRepository(sessions.client, sessions.table_name),
+        ProfileRepository(sessions.client, sessions.table_name),
+        viva,
+    )

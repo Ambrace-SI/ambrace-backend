@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from app.api.deps import CurrentUser, get_profile_service
 from app.db.session_repository import RepositoryUnavailable
 from app.schemas.profile import MeResponse, ProfileUpdateRequest
-from app.services.profile_service import ProfileService
+from app.services.profile_service import AccountTypeChangeBlocked, ProfileService
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +31,9 @@ async def _run(operation: Awaitable[MeResponse], event: str) -> MeResponse:
     """
     try:
         return await operation
+    except AccountTypeChangeBlocked as blocked:
+        # The message is ours and says what to do; it contains no profile data.
+        raise HTTPException(409, str(blocked)) from None
     except RepositoryUnavailable:
         logger.error("event=%s error_type=RepositoryUnavailable", event)
         raise HTTPException(
