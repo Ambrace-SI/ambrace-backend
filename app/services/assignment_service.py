@@ -8,6 +8,7 @@
 """
 
 import datetime
+from collections import defaultdict
 
 from app.db.assignment_repository import (
     Assignment,
@@ -20,13 +21,36 @@ from app.db.profile_repository import ProfileRepository, is_educator
 from app.schemas.assignment import (
     AssignmentCreateRequest,
     AssignmentResponse,
+    AssignmentResultsResponse,
+    ClassSummaryResponse,
     StudentAssignmentResponse,
+    StudentReportResponse,
+    StudentResultRow,
 )
 from app.schemas.viva import CurriculumSelectionRequest, VivaStartRequest
+from app.services.class_summary import average as _average
+from app.services.class_summary import summarise
 from app.services.group_service import AccountTypeRequired
 from app.services.viva_service import VivaService
 
 MAX_ASSIGNMENTS_PER_GROUP = 100
+
+
+class ResultNotFound(Exception):
+    """The student has not finished this viva (or it was removed)."""
+
+
+def _result_row(
+    student_id: str, name: str, in_group: bool, result: AssignmentResult | None
+) -> StudentResultRow:
+    return StudentResultRow(
+        student_id=student_id,
+        name=name,
+        in_group=in_group,
+        status="done" if result else "not_started",
+        score=result.feedback.score if result else None,
+        completed_at=result.completed_at if result else None,
+    )
 
 
 class AssignmentInvalid(ValueError):
@@ -47,6 +71,7 @@ class AssignmentResultRecorder:
             AssignmentResult(
                 assignment_id=session.assignment.assignment_id,
                 student_id=session.user_id,
+                student_name=session.student_name,
                 session_id=session.id,
                 feedback=session.feedback,
                 completed_at=session.ended_at or utc_now(),
@@ -100,10 +125,13 @@ class AssignmentService:
             created_at=now,
         )
         await self.assignments.create_assignment(assignment)
-        return self._owner_view(assignment, 0)
+        return self._owner_view(assignment, [], 0)
 
     @staticmethod
-    def _owner_view(assignment: Assignment, completed: int) -> AssignmentResponse:
+    def _owner_view(
+        assignment: Assignment, scores: list[int], completed: int
+    ) -> AssignmentResponse:
+        """`completed` counts current members; `scores` are every result, leavers' too."""
         return AssignmentResponse(
             assignment_id=assignment.assignment_id,
             title=assignment.title,
@@ -111,6 +139,7 @@ class AssignmentService:
             due_on=assignment.due_on,
             created_at=assignment.created_at,
             completed_count=completed,
+            average_score=_average(scores),
         )
 
     async def list_for_group(
@@ -118,10 +147,81 @@ class AssignmentService:
     ) -> list[AssignmentResponse]:
         await self._owned_group(user_id, group_id)
         assignments = await self.assignments.list_assignments(group_id)
-        counts = await self.assignments.count_results(group_id)
+        members = {m.student_id for m in await self.groups.list_members(group_id)}
+        scores: dict[str, list[int]] = defaultdict(list)
+        completed: dict[str, int] = defaultdict(int)
+        for result in await self.assignments.list_group_results(group_id):
+            scores[result.assignment_id].append(result.feedback.score)
+            if result.student_id in members:
+                completed[result.assignment_id] += 1
         return [
-            self._owner_view(a, counts.get(a.assignment_id, 0)) for a in assignments
+            self._owner_view(a, scores[a.assignment_id], completed[a.assignment_id])
+            for a in assignments
         ]
+
+    async def results(
+        self, user_id: str, group_id: str, assignment_id: str
+    ) -> AssignmentResultsResponse:
+        """Everyone in the group against one viva, and anyone who left after finishing it."""
+        await self._owned_group(user_id, group_id)
+        assignment = await self.assignments.get_assignment(group_id, assignment_id)
+        members = await self.groups.list_members(group_id)
+        results = {
+            r.student_id: r
+            for r in await self.assignments.list_results(group_id, assignment_id)
+        }
+        rows = [
+            _result_row(m.student_id, m.name, True, results.get(m.student_id))
+            for m in members
+        ]
+        in_group = {m.student_id for m in members}
+        rows += [
+            _result_row(r.student_id, r.student_name or "Former student", False, r)
+            for r in results.values()
+            if r.student_id not in in_group
+        ]
+        rows.sort(key=lambda row: row.name.casefold())
+        scores = [r.feedback.score for r in results.values()]
+        return AssignmentResultsResponse(
+            assignment=self._owner_view(
+                assignment, scores, sum(1 for r in results if r in in_group)
+            ),
+            average_score=_average(scores),
+            students=rows,
+        )
+
+    async def report(
+        self, user_id: str, group_id: str, assignment_id: str, student_id: str
+    ) -> StudentReportResponse:
+        """A student's report for the owner: the feedback, never the transcript."""
+        await self._owned_group(user_id, group_id)
+        assignment = await self.assignments.get_assignment(group_id, assignment_id)
+        result = await self.assignments.get_result(group_id, assignment_id, student_id)
+        if result is None:
+            raise ResultNotFound
+        members = await self.groups.list_members(group_id)
+        member = next((m for m in members if m.student_id == student_id), None)
+        return StudentReportResponse(
+            student_id=student_id,
+            student_name=(member.name if member else None)
+            or result.student_name
+            or "Former student",
+            in_group=member is not None,
+            assignment_id=assignment_id,
+            title=assignment.title,
+            curriculum_selection=assignment.curriculum_selection,
+            feedback=result.feedback,
+            completed_at=result.completed_at,
+        )
+
+    async def summary(self, user_id: str, group_id: str) -> ClassSummaryResponse:
+        await self._owned_group(user_id, group_id)
+        return summarise(
+            await self.groups.list_members(group_id),
+            await self.assignments.list_assignments(group_id),
+            await self.assignments.list_group_results(group_id),
+            utc_now().date(),
+        )
 
     async def delete(self, user_id: str, group_id: str, assignment_id: str) -> None:
         await self._owned_group(user_id, group_id)

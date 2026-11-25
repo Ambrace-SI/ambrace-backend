@@ -45,6 +45,8 @@ class AssignmentResult(BaseModel):
 
     assignment_id: str
     student_id: str
+    # Their name when they took it, so the result still reads after they leave.
+    student_name: str | None = None
     session_id: str
     feedback: VivaFeedback
     completed_at: datetime.datetime
@@ -169,20 +171,29 @@ class AssignmentRepository:
 
     # -------------------------------------------------------------- results
 
-    async def count_results(self, group_id: str) -> dict[str, int]:
-        """How many students finished each assignment in the group."""
-        response_items = await self._query(f"GROUP#{group_id}", "RESULT#")
-        counts: dict[str, int] = {}
-        for item in response_items:
-            assignment_id = item["sk"]["S"].split("#")[1]
-            counts[assignment_id] = counts.get(assignment_id, 0) + 1
-        return counts
-
     async def list_results(
         self, group_id: str, assignment_id: str
     ) -> list[AssignmentResult]:
         items = await self._query(f"GROUP#{group_id}", f"RESULT#{assignment_id}#")
         return [AssignmentResult.model_validate_json(i["data"]["S"]) for i in items]
+
+    async def list_group_results(self, group_id: str) -> list[AssignmentResult]:
+        """Every result in the group, for the class summary."""
+        items = await self._query(f"GROUP#{group_id}", "RESULT#")
+        return [AssignmentResult.model_validate_json(i["data"]["S"]) for i in items]
+
+    async def get_result(
+        self, group_id: str, assignment_id: str, student_id: str
+    ) -> AssignmentResult | None:
+        response = await self._call(
+            "get_item",
+            TableName=self.table_name,
+            Key=_result_key(group_id, assignment_id, student_id),
+            ConsistentRead=True,
+        )
+        if "Item" not in response:
+            return None
+        return AssignmentResult.model_validate_json(response["Item"]["data"]["S"])
 
     async def list_completions(self, student_id: str) -> list[Completion]:
         items = await self._query(f"USER#{student_id}", "DONE#")

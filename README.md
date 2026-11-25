@@ -140,7 +140,7 @@ on the server from the assignment, so a student cannot change its scope.
 | Route | Who | Purpose |
 |---|---|---|
 | `POST /api/v1/groups/{id}/assignments` | owner | Set a viva: `curriculum_selection` (one chapter) and optional `due_on`. The class must match the group's class, if it has one. |
-| `GET /api/v1/groups/{id}/assignments` | owner | The group's vivas, newest first, with `completed_count`. |
+| `GET /api/v1/groups/{id}/assignments` | owner | The group's vivas, newest first, with `completed_count` (current members who finished) and `average_score` (every result, including students who have since left). |
 | `DELETE /api/v1/groups/{id}/assignments/{aid}` | owner | Remove a viva and every result recorded for it. |
 | `GET /api/v1/groups/assigned` | student | Vivas set in all my groups: not done first, soonest due first, with my score once done. |
 | `POST /api/v1/groups/{id}/assignments/{aid}/start` | student in the group | Start it. Returns the same answer as `/viva/start`, so the browser's voice engine is unchanged. 5 per minute. |
@@ -159,6 +159,22 @@ Storage stays in the sessions table:
 - `GROUP#<id>/RESULT#<aid>#<student>` holds the student's report, for the owner.
 - `USER#<student>/DONE#<id>#<aid>` records the completion on the student's side.
 - The session itself gains an optional `assignment` reference.
+
+## Results and the class summary
+
+Only the group's owner reads these; anyone else gets 404. They hold the report
+only: there is no transcript to return.
+
+| Route | Purpose |
+|---|---|
+| `GET /api/v1/groups/{id}/assignments/{aid}/results` | Every student against one viva (`done` with the score, or `not_started`), and the average. A student who left after finishing stays, with `in_group: false`. |
+| `GET /api/v1/groups/{id}/assignments/{aid}/results/{student}` | That student's report: score, summary, strengths, areas to work on, next steps. 404 until they finish. |
+| `GET /api/v1/groups/{id}/summary` | The class at a glance: completion (`completed` of `expected`), average, score bands (0-4, 5-7, 8-10), each viva's average, and each student's average, latest score and overdue count. |
+
+The summary is plain arithmetic (`app/services/class_summary.py`) over the
+group's current members, so every number can be checked. A student
+`needs_attention` when their average is below 5 or a viva is past its due day
+and not done. A viva due before someone joined is never overdue for them.
 
 ## Local development
 

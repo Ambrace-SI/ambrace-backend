@@ -20,10 +20,17 @@ from app.db.session_repository import RepositoryUnavailable
 from app.schemas.assignment import (
     AssignmentCreateRequest,
     AssignmentResponse,
+    AssignmentResultsResponse,
+    ClassSummaryResponse,
     StudentAssignmentResponse,
+    StudentReportResponse,
 )
 from app.schemas.viva import VivaStartResponse
-from app.services.assignment_service import AssignmentInvalid, AssignmentService
+from app.services.assignment_service import (
+    AssignmentInvalid,
+    AssignmentService,
+    ResultNotFound,
+)
 from app.services.gemini_service import GeminiTokenUnavailable
 from app.services.group_service import AccountTypeRequired
 
@@ -39,6 +46,8 @@ limiter = Limiter(key_func=get_remote_address)
 Service = Annotated[AssignmentService, Depends(get_assignment_service)]
 GroupIdPath = Annotated[str, Path(pattern=r"^[0-9a-f]{32}$")]
 AssignmentIdPath = Annotated[str, Path(pattern=SESSION_ID_PATTERN, max_length=53)]
+# Cognito subjects are UUIDs; anything else cannot be a student.
+StudentIdPath = Annotated[str, Path(pattern=r"^[0-9A-Za-z-]{1,64}$")]
 
 
 async def _run[T](operation: Awaitable[T], event: str) -> T:
@@ -48,6 +57,8 @@ async def _run[T](operation: Awaitable[T], event: str) -> T:
         raise HTTPException(404, "Group not found") from None
     except AssignmentNotFound:
         raise HTTPException(404, "This viva is no longer set.") from None
+    except ResultNotFound:
+        raise HTTPException(404, "This student hasn't finished this viva.") from None
     except AccountTypeRequired:
         raise HTTPException(403, "Only a student can take a set viva.") from None
     except AssignmentInvalid as invalid:
@@ -101,6 +112,50 @@ async def list_assignments(
     return await _run(
         service.list_for_group(current_user.user_id, group_id),
         "assignments_read_failed",
+    )
+
+
+@router.get(
+    "/{group_id}/assignments/{assignment_id}/results",
+    response_model=AssignmentResultsResponse,
+)
+async def list_results(
+    group_id: GroupIdPath,
+    assignment_id: AssignmentIdPath,
+    service: Service,
+    current_user: CurrentUser,
+):
+    return await _run(
+        service.results(current_user.user_id, group_id, assignment_id),
+        "assignment_results_read_failed",
+    )
+
+
+@router.get(
+    "/{group_id}/assignments/{assignment_id}/results/{student_id}",
+    response_model=StudentReportResponse,
+)
+async def read_report(
+    group_id: GroupIdPath,
+    assignment_id: AssignmentIdPath,
+    student_id: StudentIdPath,
+    service: Service,
+    current_user: CurrentUser,
+):
+    """A student's report for the group's owner. Never the transcript."""
+    return await _run(
+        service.report(current_user.user_id, group_id, assignment_id, student_id),
+        "assignment_report_read_failed",
+    )
+
+
+@router.get("/{group_id}/summary", response_model=ClassSummaryResponse)
+async def read_summary(
+    group_id: GroupIdPath, service: Service, current_user: CurrentUser
+):
+    return await _run(
+        service.summary(current_user.user_id, group_id),
+        "class_summary_read_failed",
     )
 
 

@@ -166,7 +166,7 @@ def start(world, student, group_id, assignment_id):
 def test_the_whole_loop_reaches_the_teacher(world, group):
     viva = set_viva(world, group, due_on="2099-01-01")
     assert viva["title"] == "Motion"
-    assert viva["completed_count"] == 0
+    assert (viva["completed_count"], viva["average_score"]) == (0, None)
 
     assigned = world.api("riya").get("/api/v1/groups/assigned").json()
     assert [(a["title"], a["status"], a["owner_name"]) for a in assigned] == [
@@ -195,7 +195,7 @@ def test_the_whole_loop_reaches_the_teacher(world, group):
         session_id,
     )
     listed = world.api("teacher").get(f"/api/v1/groups/{group}/assignments").json()
-    assert listed[0]["completed_count"] == 1
+    assert (listed[0]["completed_count"], listed[0]["average_score"]) == (1, 7.0)
     results = asyncio.run(world.assignments.list_results(group, viva["assignment_id"]))
     assert [(r.student_id, r.feedback.score) for r in results] == [("riya", 7)]
     assert "private words" not in results[0].model_dump_json()
@@ -364,3 +364,130 @@ def test_due_dates_are_days_not_moments(world, group):
     today = datetime.datetime.now(datetime.UTC).date().isoformat()
 
     assert set_viva(world, group, due_on=today)["due_on"] == today
+
+
+# ------------------------------------------------------- what the owner reads
+
+
+def finish(world, student, group_id, assignment_id, score=7):
+    session = start(world, student, group_id, assignment_id).json()
+    assert (
+        conclude(world, student, session["viva_session_id"], score).status_code == 200
+    )
+    return session["viva_session_id"]
+
+
+def test_the_owner_sees_who_has_done_a_viva_and_how_they_scored(world, group):
+    viva = set_viva(world, group)
+    aid = viva["assignment_id"]
+    finish(world, "riya", group, aid, score=8)
+
+    response = world.api("teacher").get(
+        f"/api/v1/groups/{group}/assignments/{aid}/results"
+    )
+
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
+    body = response.json()
+    assert body["assignment"]["completed_count"] == 1
+    assert body["average_score"] == 8.0
+    assert [
+        (s["name"], s["status"], s["score"], s["in_group"]) for s in body["students"]
+    ] == [
+        ("Aman Gupta", "not_started", None, True),
+        ("Riya Verma", "done", 8, True),
+    ]
+
+
+def test_the_owner_reads_a_students_report_but_never_the_transcript(world, group):
+    viva = set_viva(world, group)
+    aid = viva["assignment_id"]
+    finish(world, "riya", group, aid, score=6)
+
+    response = world.api("teacher").get(
+        f"/api/v1/groups/{group}/assignments/{aid}/results/riya"
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert (body["student_name"], body["title"], body["feedback"]["score"]) == (
+        "Riya Verma",
+        "Motion",
+        6,
+    )
+    assert body["feedback"]["areas_of_improvement"] == ["Velocity has a direction"]
+    assert "transcript" not in response.text
+    assert "private words" not in response.text
+    missing = world.api("teacher").get(
+        f"/api/v1/groups/{group}/assignments/{aid}/results/aman"
+    )
+    assert missing.status_code == 404
+
+
+def test_a_student_who_left_after_finishing_stays_in_the_results(world, group):
+    viva = set_viva(world, group)
+    aid = viva["assignment_id"]
+    finish(world, "riya", group, aid, score=9)
+    world.api("riya").delete(f"/api/v1/groups/joined/{group}")
+
+    students = (
+        world.api("teacher")
+        .get(f"/api/v1/groups/{group}/assignments/{aid}/results")
+        .json()["students"]
+    )
+
+    assert [(s["name"], s["status"], s["in_group"]) for s in students] == [
+        ("Aman Gupta", "not_started", True),
+        ("Riya Verma", "done", False),
+    ]
+    # Done counts who is still in the group; the average keeps every result.
+    listed = world.api("teacher").get(f"/api/v1/groups/{group}/assignments").json()
+    assert (listed[0]["completed_count"], listed[0]["average_score"]) == (0, 9.0)
+    report = world.api("teacher").get(
+        f"/api/v1/groups/{group}/assignments/{aid}/results/riya"
+    )
+    assert report.json()["in_group"] is False
+
+
+def test_the_class_summary_adds_up_the_groups_vivas(world, group):
+    first = set_viva(world, group)["assignment_id"]
+    finish(world, "riya", group, first, score=9)
+    finish(world, "aman", group, first, score=3)
+
+    response = world.api("teacher").get(f"/api/v1/groups/{group}/summary")
+
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
+    body = response.json()
+    assert (body["completed"], body["expected"], body["average_score"]) == (2, 2, 6.0)
+    assert [(s["name"], s["needs_attention"]) for s in body["students"]] == [
+        ("Aman Gupta", True),
+        ("Riya Verma", False),
+    ]
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/summary",
+        "/assignments/{aid}/results",
+        "/assignments/{aid}/results/riya",
+    ],
+)
+def test_only_the_owner_reads_results(world, group, path):
+    aid = set_viva(world, group)["assignment_id"]
+    finish(world, "riya", group, aid)
+    url = f"/api/v1/groups/{group}" + path.format(aid=aid)
+
+    for someone in ("other-teacher", "riya", "outsider"):
+        assert world.api(someone).get(url).status_code == 404
+
+
+def test_results_for_a_removed_viva_are_gone(world, group):
+    aid = set_viva(world, group)["assignment_id"]
+    finish(world, "riya", group, aid)
+    world.api("teacher").delete(f"/api/v1/groups/{group}/assignments/{aid}")
+
+    for path in (f"/assignments/{aid}/results", f"/assignments/{aid}/results/riya"):
+        response = world.api("teacher").get(f"/api/v1/groups/{group}{path}")
+        assert response.status_code == 404
