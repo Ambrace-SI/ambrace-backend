@@ -33,6 +33,13 @@ class VivaFeedback(BaseModel):
     coverage_note: str | None = None
 
 
+class AssignmentRef(BaseModel):
+    """The viva a teacher or parent set, when a session was started from one."""
+
+    group_id: str
+    assignment_id: str
+
+
 class VivaSession(BaseModel):
     """Persisted session aggregate; expires_at ends activity, not data retention."""
 
@@ -52,6 +59,7 @@ class VivaSession(BaseModel):
     ended_at: datetime.datetime | None = None
     expires_at: datetime.datetime | None = None
     status: Literal["in_progress", "completed", "abandoned"] = "in_progress"
+    assignment: AssignmentRef | None = None
     feedback: VivaFeedback | None = None
     transcript: str | None = None
     revision: int = 0

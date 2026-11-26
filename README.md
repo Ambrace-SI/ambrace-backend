@@ -72,17 +72,109 @@ a profile cannot be read or written for anyone else.
 | `GET /api/v1/me` | Always `200`. Returns `user_id`, `onboarding_complete` and `profile` (`null` until onboarding is done). |
 | `PUT /api/v1/me` | Creates or replaces the profile and returns the same shape. |
 
-Profile fields: `name` (required, up to 100 characters), `class_level`
-(required, whole number 5 to 12), `board` (optional: `CBSE`, `ICSE`,
-`STATE_BOARD` or `OTHER`), `school_name` and `school_address` (optional).
-Only the name and the class are needed to complete onboarding.
-Unknown fields and control characters are rejected (an address may contain
-line breaks). Responses carry `Cache-Control: no-store`.
+Profile fields:
+
+- `name`: required, up to 100 characters.
+- `account_type`: `student` (the default), `teacher` or `parent`. Teachers and parents have exactly the same permissions (`is_educator`); the type only changes wording.
+  - Switching between teacher and parent is always allowed.
+  - Switching between student and teacher or parent returns `409`, with a message saying what to do first, while anything depends on the current side. A student must have left their groups first; a teacher or parent must have deleted theirs.
+  - Saving a profile also updates the copies of the name (and type) that groups keep for their lists.
+- `class_level`: a whole number from 5 to 12. Required for a student, refused for a teacher or parent. Their classes belong to their groups.
+- `board`: optional, one of `CBSE`, `ICSE`, `STATE_BOARD` or `OTHER`.
+- `school_name` and `school_address`: optional.
+
+Unknown fields and control characters are rejected; an address may contain
+line breaks. Profiles saved before account types existed read as students.
+Responses carry `Cache-Control: no-store`.
 
 The profile is one item in the sessions table (`pk = USER#<id>`,
 `sk = PROFILE`), so it needs no extra table, index or permission. The
 `/api/v1/viva/start` request is unchanged: the web app passes the name and
 class from the profile.
+
+## Groups (teachers and parents)
+
+A teacher or parent (an "educator") creates groups. Students join a group with its six-character code
+or link. Joining is the student's consent to share their results with the
+group's owner, so an educator can never add a student directly.
+
+Permissions come from relationships, not a global role: the owner of a group
+manages it. This leaves room for schools, with organisation admins, later.
+
+| Route | Who | Purpose |
+|---|---|---|
+| `POST /api/v1/groups` | educator | Create a group (`name`, optional `class_level`). |
+| `GET /api/v1/groups` | educator | My groups, with member count and join code. |
+| `GET /api/v1/groups/{id}` | owner | The group and its roster. |
+| `PATCH /api/v1/groups/{id}` | owner | Rename. |
+| `DELETE /api/v1/groups/{id}` | owner | Delete the group, its code and every membership. |
+| `POST /api/v1/groups/{id}/join-code` | owner | Replace the code. The old code stops working at once. |
+| `DELETE /api/v1/groups/{id}/members/{student}` | owner | Remove a student. |
+| `GET /api/v1/groups/invite/{code}` | signed in | Preview a group before joining, with `already_member`. 20 per minute. |
+| `POST /api/v1/groups/join` | student | Join with `{"code": ...}`. Repeating it changes nothing and returns `already_member: true`. 5 per minute. |
+| `GET /api/v1/groups/joined` | student | Groups I belong to. No roster and no code. |
+| `DELETE /api/v1/groups/joined/{id}` | student | Leave. |
+
+A group that is missing and a group someone else owns both return `404`, so
+ids cannot be probed. Limits are 200 students per group and 50 groups per
+educator.
+
+Storage stays in the sessions table with no index:
+
+- `GROUP#<id>/META` holds the group itself.
+- `GROUP#<id>/MEMBER#<student>` is one row per student in the group.
+- `USER#<owner>/OWNS#<id>` lets an educator list their groups.
+- `USER#<student>/MEMBEROF#<id>` lets a student list the groups they joined.
+- `JOINCODE#<code>/JOINCODE` finds a group from its code.
+
+Both sides of a relationship are written in one transaction. Transactions are
+authorised through the item actions the Lambda already has, plus
+`dynamodb:BatchGetItem` and `dynamodb:ConditionCheckItem`.
+
+## Set vivas (assignments)
+
+A group's owner sets a viva for one chapter (with optional topics) and an
+optional due day. Students in the group see it and start it. The viva is built
+on the server from the assignment, so a student cannot change its scope.
+
+| Route | Who | Purpose |
+|---|---|---|
+| `POST /api/v1/groups/{id}/assignments` | owner | Set a viva: `curriculum_selection` (one chapter) and optional `due_on`. The class must match the group's class, if it has one. |
+| `GET /api/v1/groups/{id}/assignments` | owner | The group's vivas, newest first, with `completed_count` (current members who finished) and `average_score` (every result, including students who have since left). |
+| `DELETE /api/v1/groups/{id}/assignments/{aid}` | owner | Remove a viva and every result recorded for it. |
+| `GET /api/v1/groups/assigned` | student | Vivas set in all my groups: not done first, soonest due first, with my score once done. |
+| `POST /api/v1/groups/{id}/assignments/{aid}/start` | student in the group | Start it. Returns the same answer as `/viva/start`, so the browser's voice engine is unchanged. 5 per minute. |
+
+When a viva started from an assignment concludes, the **first** finished
+attempt is recorded for the owner: the report only, never the transcript.
+Later attempts are the student's own practice. Nothing is recorded once the
+viva has been removed or the student has left the group. The browser sends a
+conclusion once, so a failure to record is logged
+(`event=assignment_result_record_failed`) and never fails the student's own
+report.
+
+Storage stays in the sessions table:
+
+- `GROUP#<id>/ASSIGN#<aid>` holds the set viva.
+- `GROUP#<id>/RESULT#<aid>#<student>` holds the student's report, for the owner.
+- `USER#<student>/DONE#<id>#<aid>` records the completion on the student's side.
+- The session itself gains an optional `assignment` reference.
+
+## Results and the class summary
+
+Only the group's owner reads these; anyone else gets 404. They hold the report
+only: there is no transcript to return.
+
+| Route | Purpose |
+|---|---|
+| `GET /api/v1/groups/{id}/assignments/{aid}/results` | Every student against one viva (`done` with the score, or `not_started`), and the average. A student who left after finishing stays, with `in_group: false`. |
+| `GET /api/v1/groups/{id}/assignments/{aid}/results/{student}` | That student's report: score, summary, strengths, areas to work on, next steps. 404 until they finish. |
+| `GET /api/v1/groups/{id}/summary` | The class at a glance: completion (`completed` of `expected`), average, score bands (0-4, 5-7, 8-10), each viva's average, and each student's average, latest score and overdue count. |
+
+The summary is plain arithmetic (`app/services/class_summary.py`) over the
+group's current members, so every number can be checked. A student
+`needs_attention` when their average is below 5 or a viva is past its due day
+and not done. A viva due before someone joined is never overdue for them.
 
 ## Local development
 
