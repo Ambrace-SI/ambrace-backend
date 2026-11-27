@@ -1,0 +1,49 @@
+{
+  "subject_name": "Science",
+  "class_level": 9,
+  "chapter": "Motion",
+  "topics": ["Speed and velocity", "Acceleration"],
+  "students": [
+    {
+      "ref": "S1",
+      "score": 8,
+      "summary": "S1 defined speed and velocity correctly and worked out average speed for a two-part journey without help. Needed a hint to explain why velocity can be zero when distance is not.",
+      "strong_points": ["Defines speed and velocity correctly", "Calculates average speed for a journey"],
+      "areas_of_improvement": ["Why displacement can be zero after a round trip"],
+      "next_steps": ["Trace a round trip on paper and mark start and end points"],
+      "coverage_note": "Acceleration was touched on briefly."
+    },
+    {
+      "ref": "S2",
+      "score": 6,
+      "summary": "S2 defined speed well but used speed and velocity as the same thing until prompted. Unit conversion from km/h to m/s was shaky.",
+      "strong_points": ["Defines speed"],
+      "areas_of_improvement": ["Treats velocity as the same as speed", "Converting km/h to m/s"],
+      "next_steps": ["Practise converting three everyday speeds to m/s"]
+    },
+    {
+      "ref": "S3",
+      "score": 3,
+      "summary": "S3 recalled the formula for speed but could not explain what it means. Did not know that velocity has a direction, and could not describe acceleration.",
+      "strong_points": [],
+      "areas_of_improvement": ["Velocity has a direction", "What acceleration means", "Explaining the speed formula in words"],
+      "next_steps": ["Describe a walk to school with distance, time and direction"]
+    },
+    {
+      "ref": "S4",
+      "score": 7,
+      "summary": "S4 explained uniform and non-uniform motion with good examples. Mixed up distance and displacement for a circular track.",
+      "strong_points": ["Explains uniform and non-uniform motion with examples", "Defines speed"],
+      "areas_of_improvement": ["Displacement on a circular track after one lap"],
+      "next_steps": []
+    },
+    {
+      "ref": "S5",
+      "score": 5,
+      "summary": "S5 knew speed is distance over time. Said velocity and speed are the same and struggled to convert km/h to m/s.",
+      "strong_points": ["Knows speed is distance over time"],
+      "areas_of_improvement": ["Velocity is speed with a direction", "Unit conversion km/h to m/s"],
+      "next_steps": ["Practise unit conversion with a simple table"]
+    }
+  ]
+}

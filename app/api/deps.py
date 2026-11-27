@@ -31,17 +31,22 @@ from fastapi import Depends
 from app.core.auth import (
     CurrentUser,
 )
+from app.core.config import settings
 from app.db.assignment_repository import AssignmentRepository
 from app.db.database import get_repository, init_db
 from app.db.group_repository import GroupRepository
+from app.db.insight_repository import InsightRepository
 from app.db.profile_repository import ProfileRepository
+from app.interfaces.insight_generator import ClassInsightGenerator
 from app.interfaces.llm_client import LLMClient
 from app.services.assignment_service import (
     AssignmentResultRecorder,
     AssignmentService,
 )
+from app.services.class_insight_service import ClassInsightService
 from app.services.gemini_service import GeminiService
 from app.services.group_service import GroupService
+from app.services.insights.registry import build_generator
 from app.services.profile_service import ProfileService
 from app.services.viva_service import VivaService
 
@@ -136,4 +141,27 @@ async def get_assignment_service(
         AssignmentRepository(sessions.client, sessions.table_name),
         ProfileRepository(sessions.client, sessions.table_name),
         viva,
+    )
+
+
+# ----------------------------------------------------------------------
+# Class Insight Providers
+# ----------------------------------------------------------------------
+@lru_cache
+def get_insight_generator() -> ClassInsightGenerator:
+    """Chosen by CLASS_INSIGHT_PROVIDER; generators hold no per-request state."""
+    return build_generator(settings)
+
+
+async def get_class_insight_service(
+    current_user: CurrentUser,
+    generator: Annotated[ClassInsightGenerator, Depends(get_insight_generator)],
+) -> ClassInsightService:
+    await init_db()
+    sessions = get_repository()
+    return ClassInsightService(
+        GroupRepository(sessions.client, sessions.table_name),
+        AssignmentRepository(sessions.client, sessions.table_name),
+        InsightRepository(sessions.client, sessions.table_name),
+        generator,
     )

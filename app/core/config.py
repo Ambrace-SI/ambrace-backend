@@ -39,6 +39,13 @@ class Settings(BaseSettings):
     )
     VIVA_SESSION_DURATION_MINUTES: Literal[5, 10, 15] = 5
 
+    # The class insight for teachers (see app/services/insights/registry.py).
+    # "heuristic" needs no model and costs nothing.
+    CLASS_INSIGHT_PROVIDER: Literal["gemini", "heuristic"] = "gemini"
+    CLASS_INSIGHT_MODEL: str = Field(
+        default="gemini-3.5-flash-lite", min_length=1, pattern=r"^\S+$"
+    )
+
     # Production Frontend URL (optional, for CORS)
     FRONTEND_URL: str | None = Field(
         default=None, description="Production frontend URL for CORS"

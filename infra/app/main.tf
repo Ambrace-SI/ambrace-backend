@@ -137,6 +137,8 @@ resource "aws_lambda_function" "backend" {
       DYNAMODB_TABLE_NAME           = aws_dynamodb_table.sessions.name
       GEMINI_LIVE_MODEL             = var.gemini_live_model
       VIVA_SESSION_DURATION_MINUTES = tostring(var.viva_session_duration_minutes)
+      CLASS_INSIGHT_PROVIDER        = var.class_insight_provider
+      CLASS_INSIGHT_MODEL           = var.class_insight_model
       CORS_ORIGINS                  = join(",", var.cors_allowed_origins)
       COGNITO_USER_POOL_ID          = aws_cognito_user_pool.main.id
       COGNITO_APP_CLIENT_ID         = aws_cognito_user_pool_client.web.id

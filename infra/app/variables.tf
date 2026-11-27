@@ -39,6 +39,28 @@ variable "gemini_live_model" {
   }
 }
 
+variable "class_insight_provider" {
+  type        = string
+  description = "Writer of teachers' class insights: gemini, or heuristic (no model, no cost)."
+  default     = "gemini"
+
+  validation {
+    condition     = contains(["gemini", "heuristic"], var.class_insight_provider)
+    error_message = "Class insight provider must be gemini or heuristic."
+  }
+}
+
+variable "class_insight_model" {
+  type        = string
+  description = "Text model used for class insights when the provider is a model."
+  default     = "gemini-3.5-flash-lite"
+
+  validation {
+    condition     = can(regex("^\\S+$", var.class_insight_model))
+    error_message = "Class insight model must be non-empty and contain no whitespace."
+  }
+}
+
 variable "viva_session_duration_minutes" {
   type        = number
   description = "Fixed viva duration, configured per environment."

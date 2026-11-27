@@ -4,6 +4,7 @@ Items, all in the sessions table:
 
     GROUP#<gid> / ASSIGN#<aid>             the viva set for the group
     GROUP#<gid> / RESULT#<aid>#<sid>       a student's report, for the owner
+    GROUP#<gid> / INSIGHT#<aid>            the class insight (InsightRepository)
     USER#<sid>  / DONE#<gid>#<aid>         the same completion, for the student
 
 A result is written from both sides in one transaction, and only while the
@@ -18,6 +19,7 @@ from typing import Any
 from botocore.exceptions import BotoCoreError, ClientError
 from pydantic import BaseModel
 
+from app.db.insight_repository import insight_key
 from app.db.models import VivaFeedback
 from app.db.session_repository import RepositoryUnavailable
 from app.domain.curriculum import CurriculumSelection
@@ -146,13 +148,15 @@ class AssignmentRepository:
         return sorted(assignments, key=lambda a: a.assignment_id, reverse=True)
 
     async def delete_assignment(self, group_id: str, assignment_id: str) -> None:
-        """Remove the assignment, then every result and completion recorded for it."""
+        """Remove the assignment, then its class insight and every result and completion."""
         await self._call(
             "delete_item",
             TableName=self.table_name,
             Key=_assignment_key(group_id, assignment_id),
         )
-        deletes: list[dict[str, Any]] = []
+        deletes: list[dict[str, Any]] = [
+            {"Delete": {"Key": insight_key(group_id, assignment_id)}}
+        ]
         for item in await self._query(f"GROUP#{group_id}", f"RESULT#{assignment_id}#"):
             student_id = item["student_id"]["S"]
             deletes.append({"Delete": {"Key": {"pk": item["pk"], "sk": item["sk"]}}})
