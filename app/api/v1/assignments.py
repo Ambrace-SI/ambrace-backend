@@ -12,7 +12,11 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Request, Response
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
-from app.api.deps import CurrentUser, get_assignment_service
+from app.api.deps import (
+    CurrentUser,
+    get_assignment_service,
+    get_class_insight_service,
+)
 from app.db.assignment_repository import AssignmentNotFound
 from app.db.group_repository import GroupNotFound
 from app.db.models import SESSION_ID_PATTERN
@@ -25,11 +29,18 @@ from app.schemas.assignment import (
     StudentAssignmentResponse,
     StudentReportResponse,
 )
+from app.schemas.class_insight import ClassInsightResponse
 from app.schemas.viva import VivaStartResponse
 from app.services.assignment_service import (
     AssignmentInvalid,
     AssignmentService,
     ResultNotFound,
+)
+from app.services.class_insight_service import (
+    MIN_RESULTS,
+    ClassInsightService,
+    InsightUnavailable,
+    NotEnoughResults,
 )
 from app.services.gemini_service import GeminiTokenUnavailable
 from app.services.group_service import AccountTypeRequired
@@ -44,6 +55,7 @@ def _never_cache(response: Response) -> None:
 router = APIRouter(dependencies=[Depends(_never_cache)])
 limiter = Limiter(key_func=get_remote_address)
 Service = Annotated[AssignmentService, Depends(get_assignment_service)]
+InsightService = Annotated[ClassInsightService, Depends(get_class_insight_service)]
 GroupIdPath = Annotated[str, Path(pattern=r"^[0-9a-f]{32}$")]
 AssignmentIdPath = Annotated[str, Path(pattern=SESSION_ID_PATTERN, max_length=53)]
 # Cognito subjects are UUIDs; anything else cannot be a student.
@@ -64,6 +76,17 @@ async def _run[T](operation: Awaitable[T], event: str) -> T:
     except AssignmentInvalid as invalid:
         # Our own sentence about the request; it contains no personal data.
         raise HTTPException(422, str(invalid)) from None
+    except NotEnoughResults:
+        raise HTTPException(
+            409,
+            f"A class insight needs at least {MIN_RESULTS} students to finish this viva.",
+        ) from None
+    except InsightUnavailable:
+        raise HTTPException(
+            503,
+            "The class insight couldn't be written just now. Please try again.",
+            headers={"Retry-After": "5"},
+        ) from None
     except GeminiTokenUnavailable:
         logger.error("event=%s error_type=GeminiTokenUnavailable", event)
         raise HTTPException(
@@ -156,6 +179,42 @@ async def read_summary(
     return await _run(
         service.summary(current_user.user_id, group_id),
         "class_summary_read_failed",
+    )
+
+
+@router.get(
+    "/{group_id}/assignments/{assignment_id}/insight",
+    response_model=ClassInsightResponse,
+)
+async def read_insight(
+    group_id: GroupIdPath,
+    assignment_id: AssignmentIdPath,
+    service: InsightService,
+    current_user: CurrentUser,
+):
+    """The saved class insight, or whether one can be written yet."""
+    return await _run(
+        service.read(current_user.user_id, group_id, assignment_id),
+        "class_insight_read_failed",
+    )
+
+
+@router.post(
+    "/{group_id}/assignments/{assignment_id}/insight",
+    response_model=ClassInsightResponse,
+)
+@limiter.limit("5/minute")
+async def generate_insight(
+    request: Request,
+    group_id: GroupIdPath,
+    assignment_id: AssignmentIdPath,
+    service: InsightService,
+    current_user: CurrentUser,
+):
+    """Write the class insight, or return the saved one if no results changed."""
+    return await _run(
+        service.generate(current_user.user_id, group_id, assignment_id),
+        "class_insight_generate_failed",
     )
 
 
